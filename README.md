@@ -106,6 +106,16 @@ Generate an archive download URL for files on the GHFS server.
 | `names`    | string[] | No       | Specific items to include (omit for entire dir) |
 | `filename` | string   | No       | Custom filename for the archive download        |
 
+## Agent Skill
+
+`skills/ghfs/` documents GHFS itself for agents that talk to it directly rather
+than through this MCP server: how to start a local instance with the right
+permissions, and how to drive the HTTP API for listing, uploading, creating
+directories, deleting, and archiving.
+
+Point an agent at `skills/ghfs/SKILL.md`, or copy the directory into a skills
+path your runtime loads, such as `~/.claude/skills/`.
+
 ## Client Configuration
 
 ### Claude Desktop
