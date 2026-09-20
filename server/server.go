@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 const (
@@ -16,49 +15,47 @@ const (
 )
 
 // NewServer creates a new MCP server with all GHFS tools registered.
-func NewServer(ghfsURL string, debug bool) *server.MCPServer {
+func NewServer(ghfsURL string, debug bool) *mcp.Server {
 	h := NewHandler(ghfsURL)
 
-	opts := []server.ServerOption{
-		server.WithToolCapabilities(true),
-		server.WithInstructions(fmt.Sprintf(
-			"This MCP server provides tools to interact with a GHFS (Go HTTP File Server) instance at %s. "+
-				"Available operations: list directories, upload files/directories, create directories, delete files/directories.",
-			ghfsURL,
-		)),
-	}
+	s := mcp.NewServer(
+		&mcp.Implementation{Name: ServerName, Version: ServerVersion},
+		&mcp.ServerOptions{
+			Instructions: fmt.Sprintf(
+				"This MCP server provides tools to interact with a GHFS (Go HTTP File Server) instance at %s. "+
+					"Available operations: list directories, upload files/directories, create directories, delete files/directories.",
+				ghfsURL,
+			),
+		},
+	)
 
 	if debug {
-		opts = append(opts, server.WithHooks(newDebugHooks()))
+		s.AddReceivingMiddleware(debugMiddleware)
 	}
 
-	s := server.NewMCPServer(ServerName, ServerVersion, opts...)
-
-	s.AddTool(ListTool, h.HandleList)
-	s.AddTool(UploadTool, h.HandleUpload)
-	s.AddTool(MkdirTool, h.HandleMkdir)
-	s.AddTool(DeleteTool, h.HandleDelete)
-	s.AddTool(ArchiveTool, h.HandleArchive)
+	mcp.AddTool(s, ListTool, h.HandleList)
+	mcp.AddTool(s, UploadTool, h.HandleUpload)
+	mcp.AddTool(s, MkdirTool, h.HandleMkdir)
+	mcp.AddTool(s, DeleteTool, h.HandleDelete)
+	mcp.AddTool(s, ArchiveTool, h.HandleArchive)
 
 	return s
 }
 
-func newDebugHooks() *server.Hooks {
-	hooks := &server.Hooks{}
+// debugMiddleware logs every incoming MCP request and its result.
+func debugMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		params, _ := json.MarshalIndent(req.GetParams(), "", "  ")
+		log.Printf("[DEBUG] --> %s\n%s", method, params)
 
-	hooks.AddBeforeAny(func(ctx context.Context, id any, method mcp.MCPMethod, message any) {
-		data, _ := json.MarshalIndent(message, "", "  ")
-		log.Printf("[DEBUG] --> %s id=%v\n%s", method, id, data)
-	})
+		res, err := next(ctx, method, req)
+		if err != nil {
+			log.Printf("[DEBUG] <-- %s ERROR: %v", method, err)
+			return res, err
+		}
 
-	hooks.AddOnSuccess(func(ctx context.Context, id any, method mcp.MCPMethod, message any, result any) {
-		data, _ := json.MarshalIndent(result, "", "  ")
-		log.Printf("[DEBUG] <-- %s id=%v\n%s", method, id, data)
-	})
-
-	hooks.AddOnError(func(ctx context.Context, id any, method mcp.MCPMethod, message any, err error) {
-		log.Printf("[DEBUG] <-- %s id=%v ERROR: %v", method, id, err)
-	})
-
-	return hooks
+		result, _ := json.MarshalIndent(res, "", "  ")
+		log.Printf("[DEBUG] <-- %s\n%s", method, result)
+		return res, nil
+	}
 }

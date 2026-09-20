@@ -1,14 +1,16 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	mcpserver "ghfs-mcp-server/server"
 
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 func main() {
@@ -20,11 +22,13 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable debug logging of MCP messages")
 	flag.Parse()
 
+	useTLS := *certFile != "" && *keyFile != ""
+
 	if *addr == "" {
-		if *certFile == "" || *keyFile == "" {
-			*addr = ":8080"
-		} else {
+		if useTLS {
 			*addr = ":8443"
+		} else {
+			*addr = ":8080"
 		}
 	}
 
@@ -33,21 +37,22 @@ func main() {
 	switch *mode {
 	case "stdio":
 		log.Printf("Starting %s %s in STDIO mode (GHFS: %s)\n", mcpserver.ServerName, mcpserver.ServerVersion, *ghfsURL)
-		if err := server.ServeStdio(s); err != nil {
+		if err := s.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 			log.Fatalf("STDIO server error: %v", err)
 		}
 
 	case "http":
-		opts := []server.StreamableHTTPOption{
-			server.WithEndpointPath("/"),
-		}
-		if *certFile != "" && *keyFile != "" {
-			opts = append(opts, server.WithTLSCert(*certFile, *keyFile))
-			log.Println("Using HTTPS scheme")
-		}
+		handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return s }, nil)
 		log.Printf("Starting %s %s in HTTP mode on %s (GHFS: %s)\n", mcpserver.ServerName, mcpserver.ServerVersion, *addr, *ghfsURL)
-		httpServer := server.NewStreamableHTTPServer(s, opts...)
-		if err := httpServer.Start(*addr); err != nil {
+
+		var err error
+		if useTLS {
+			log.Println("Using HTTPS scheme")
+			err = http.ListenAndServeTLS(*addr, *certFile, *keyFile, handler)
+		} else {
+			err = http.ListenAndServe(*addr, handler)
+		}
+		if err != nil {
 			log.Fatalf("HTTP server error: %v", err)
 		}
 

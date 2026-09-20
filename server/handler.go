@@ -5,11 +5,16 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"slices"
 
-	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // Handler holds the GHFS client and provides MCP tool handler functions.
+//
+// Each handler receives its input already unmarshaled and validated against the
+// tool's input schema, so it only checks constraints the schema cannot express.
+// A returned error becomes a tool error result rather than a protocol error.
 type Handler struct {
 	client *ghfsClient
 }
@@ -19,17 +24,18 @@ func NewHandler(ghfsURL string) *Handler {
 	return &Handler{client: newGHFSClient(ghfsURL)}
 }
 
-// HandleList handles the ghfs_list tool call.
-func (h *Handler) HandleList(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	path, err := req.RequireString("path")
-	if err != nil {
-		return mcp.NewToolResultError("missing required parameter: path"), nil
+// textResult wraps a plain text message as a tool result.
+func textResult(text string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{&mcp.TextContent{Text: text}},
 	}
-	sort := req.GetString("sort", "")
+}
 
-	data, err := h.client.list(path, sort)
+// HandleList handles the ghfs_list tool call.
+func (h *Handler) HandleList(ctx context.Context, req *mcp.CallToolRequest, in ListInput) (*mcp.CallToolResult, any, error) {
+	data, err := h.client.list(in.Path, in.Sort)
 	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to list directory: %v", err)), nil
+		return nil, nil, fmt.Errorf("failed to list directory: %w", err)
 	}
 
 	// Pretty-print JSON for better readability
@@ -40,137 +46,82 @@ func (h *Handler) HandleList(ctx context.Context, req mcp.CallToolRequest) (*mcp
 		}
 	}
 
-	return mcp.NewToolResultText(string(data)), nil
+	return textResult(string(data)), nil, nil
 }
 
 // HandleUpload handles the ghfs_upload tool call.
-func (h *Handler) HandleUpload(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	path, err := req.RequireString("path")
-	if err != nil {
-		return mcp.NewToolResultError("missing required parameter: path"), nil
+func (h *Handler) HandleUpload(ctx context.Context, req *mcp.CallToolRequest, in UploadInput) (*mcp.CallToolResult, any, error) {
+	if len(in.Files) == 0 {
+		return nil, nil, fmt.Errorf("parameter 'files' must not be empty")
 	}
 
-	args := req.GetArguments()
-	filesRaw, ok := args["files"]
-	if !ok {
-		return mcp.NewToolResultError("missing required parameter: files"), nil
-	}
-
-	filesSlice, ok := filesRaw.([]any)
-	if !ok {
-		return mcp.NewToolResultError("parameter 'files' must be an array"), nil
-	}
-
-	if len(filesSlice) == 0 {
-		return mcp.NewToolResultError("parameter 'files' must not be empty"), nil
-	}
-
-	var uploadFiles []uploadFile
-	for i, item := range filesSlice {
-		fileMap, ok := item.(map[string]any)
-		if !ok {
-			return mcp.NewToolResultError(fmt.Sprintf("files[%d]: must be an object with 'filepath' and 'content'", i)), nil
+	uploadFiles := make([]uploadFile, 0, len(in.Files))
+	for i, f := range in.Files {
+		if f.Filepath == "" {
+			return nil, nil, fmt.Errorf("files[%d]: 'filepath' must not be empty", i)
 		}
 
-		fp, ok := fileMap["filepath"].(string)
-		if !ok || fp == "" {
-			return mcp.NewToolResultError(fmt.Sprintf("files[%d]: missing or invalid 'filepath'", i)), nil
-		}
-
-		contentB64, ok := fileMap["content"].(string)
-		if !ok {
-			return mcp.NewToolResultError(fmt.Sprintf("files[%d]: missing or invalid 'content'", i)), nil
-		}
-
-		content, err := base64.StdEncoding.DecodeString(contentB64)
+		content, err := base64.StdEncoding.DecodeString(f.Content)
 		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("files[%d]: invalid base64 content: %v", i, err)), nil
+			return nil, nil, fmt.Errorf("files[%d]: invalid base64 content: %w", i, err)
 		}
 
 		uploadFiles = append(uploadFiles, uploadFile{
-			filepath: fp,
+			filepath: f.Filepath,
 			content:  content,
 		})
 	}
 
-	if err := h.client.upload(path, uploadFiles); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("upload failed: %v", err)), nil
+	if err := h.client.upload(in.Path, uploadFiles); err != nil {
+		return nil, nil, fmt.Errorf("upload failed: %w", err)
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Successfully uploaded %d file(s) to %s", len(uploadFiles), path)), nil
+	return textResult(fmt.Sprintf("Successfully uploaded %d file(s) to %s", len(uploadFiles), in.Path)), nil, nil
 }
 
 // HandleMkdir handles the ghfs_mkdir tool call.
-func (h *Handler) HandleMkdir(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	path, err := req.RequireString("path")
-	if err != nil {
-		return mcp.NewToolResultError("missing required parameter: path"), nil
+func (h *Handler) HandleMkdir(ctx context.Context, req *mcp.CallToolRequest, in MkdirInput) (*mcp.CallToolResult, any, error) {
+	if len(in.Names) == 0 {
+		return nil, nil, fmt.Errorf("parameter 'names' must not be empty")
 	}
 
-	names := req.GetStringSlice("names", nil)
-	if len(names) == 0 {
-		return mcp.NewToolResultError("missing required parameter: names (must be a non-empty array of strings)"), nil
+	if err := h.client.mkdir(in.Path, in.Names); err != nil {
+		return nil, nil, fmt.Errorf("mkdir failed: %w", err)
 	}
 
-	if err := h.client.mkdir(path, names); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("mkdir failed: %v", err)), nil
-	}
-
-	return mcp.NewToolResultText(fmt.Sprintf("Successfully created %d directory(ies) under %s: %v", len(names), path, names)), nil
+	return textResult(fmt.Sprintf("Successfully created %d directory(ies) under %s: %v", len(in.Names), in.Path, in.Names)), nil, nil
 }
 
 // HandleDelete handles the ghfs_delete tool call.
-func (h *Handler) HandleDelete(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	path, err := req.RequireString("path")
-	if err != nil {
-		return mcp.NewToolResultError("missing required parameter: path"), nil
+func (h *Handler) HandleDelete(ctx context.Context, req *mcp.CallToolRequest, in DeleteInput) (*mcp.CallToolResult, any, error) {
+	if len(in.Names) == 0 {
+		return nil, nil, fmt.Errorf("parameter 'names' must not be empty")
 	}
 
-	names := req.GetStringSlice("names", nil)
-	if len(names) == 0 {
-		return mcp.NewToolResultError("missing required parameter: names (must be a non-empty array of strings)"), nil
+	if err := h.client.delete(in.Path, in.Names); err != nil {
+		return nil, nil, fmt.Errorf("delete failed: %w", err)
 	}
 
-	if err := h.client.delete(path, names); err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("delete failed: %v", err)), nil
-	}
-
-	return mcp.NewToolResultText(fmt.Sprintf("Successfully deleted %d item(s) from %s: %v", len(names), path, names)), nil
+	return textResult(fmt.Sprintf("Successfully deleted %d item(s) from %s: %v", len(in.Names), in.Path, in.Names)), nil, nil
 }
 
 // HandleArchive handles the ghfs_archive tool call.
-func (h *Handler) HandleArchive(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	path, err := req.RequireString("path")
-	if err != nil {
-		return mcp.NewToolResultError("missing required parameter: path"), nil
+func (h *Handler) HandleArchive(ctx context.Context, req *mcp.CallToolRequest, in ArchiveInput) (*mcp.CallToolResult, any, error) {
+	if !slices.Contains(archiveFormats, any(in.Format)) {
+		return nil, nil, fmt.Errorf("invalid format %q: must be \"tar\", \"tgz\", or \"zip\"", in.Format)
 	}
 
-	format, err := req.RequireString("format")
-	if err != nil {
-		return mcp.NewToolResultError("missing required parameter: format"), nil
-	}
+	downloadURL := h.client.archiveURL(in.Path, in.Format, in.Names, in.Filename)
 
-	switch format {
-	case "tar", "tgz", "zip":
-		// valid
-	default:
-		return mcp.NewToolResultError(fmt.Sprintf("invalid format %q: must be \"tar\", \"tgz\", or \"zip\"", format)), nil
-	}
-
-	names := req.GetStringSlice("names", nil)
-	filename := req.GetString("filename", "")
-
-	downloadURL := h.client.archiveURL(path, format, names, filename)
-
-	result := fmt.Sprintf("Archive download URL:\n%s\n\nFormat: %s", downloadURL, format)
-	if len(names) > 0 {
-		result += fmt.Sprintf("\nItems: %v", names)
+	result := fmt.Sprintf("Archive download URL:\n%s\n\nFormat: %s", downloadURL, in.Format)
+	if len(in.Names) > 0 {
+		result += fmt.Sprintf("\nItems: %v", in.Names)
 	} else {
-		result += fmt.Sprintf("\nScope: entire directory %s", path)
+		result += fmt.Sprintf("\nScope: entire directory %s", in.Path)
 	}
-	if filename != "" {
-		result += fmt.Sprintf("\nFilename: %s", filename)
+	if in.Filename != "" {
+		result += fmt.Sprintf("\nFilename: %s", in.Filename)
 	}
 
-	return mcp.NewToolResultText(result), nil
+	return textResult(result), nil, nil
 }

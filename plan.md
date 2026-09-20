@@ -188,7 +188,7 @@ ghfs-mcp-server/
 
 | 组件 | 选型 | 说明 |
 |------|------|------|
-| MCP SDK | [mcp-go](https://github.com/mark3labs/mcp-go) | Go 语言 MCP SDK，支持 STDIO 和 HTTP(SSE/Streamable) 传输 |
+| MCP SDK | [go-sdk](https://github.com/modelcontextprotocol/go-sdk) | MCP 官方 Go SDK，支持 STDIO 和 Streamable HTTP 传输 |
 | HTTP 客户端 | `net/http` (标准库) | 用于调用 GHFS REST API |
 | 命令行参数 | `flag` (标准库) | 解析运行模式和 GHFS 地址 |
 
@@ -200,7 +200,7 @@ ghfs-mcp-server/
 
 #### Step 1：初始化项目依赖
 
-- 引入 `mcp-go` SDK：`go get github.com/mark3labs/mcp-go`
+- 引入官方 Go SDK：`go get github.com/modelcontextprotocol/go-sdk`
 - 确认项目可编译通过
 
 #### Step 2：实现 GHFS HTTP 客户端 (`server/ghfs.go`)
@@ -240,7 +240,7 @@ func (c *ghfsClient) archiveURL(path string, format string, names []string, file
 
 #### Step 4：定义 MCP Tools (`server/tools.go`)
 
-使用 `mcp-go` SDK 注册 4 个 Tool：
+使用官方 Go SDK 的泛型 `mcp.AddTool` 注册 5 个 Tool：
 
 - `ghfs_list`
 - `ghfs_upload`
@@ -248,12 +248,12 @@ func (c *ghfsClient) archiveURL(path string, format string, names []string, file
 - `ghfs_delete`
 - `ghfs_archive`
 
-为每个 Tool 定义输入参数的 JSON Schema。
+每个 Tool 的输入参数用一个 Go 结构体描述，JSON Schema 由 SDK 自动推导：无 `omitempty` 的字段为必填，`jsonschema` 标签作为字段说明。枚举等标签无法表达的约束，通过 `jsonschema.For` 推导后再补充。
 
 #### Step 5：实现 Tool Handler (`server/handler.go`)
 
 `NewHandler` 直接接收 GHFS URL 字符串，内部创建客户端：
-- 解析 MCP 请求中的参数
+- 接收 SDK 已反序列化并校验过的类型化入参
 - 调用 `ghfsClient` 对应方法
 - 组装并返回 MCP 响应
 
@@ -268,8 +268,8 @@ func (c *ghfsClient) archiveURL(path string, format string, names []string, file
   -addr string        HTTP 模式监听地址 (默认 ":8080")
 ```
 
-- **STDIO 模式**：使用 `mcp-go` 的 `server.ServeStdio()` 通过标准输入输出通信
-- **HTTP 模式**：使用 `mcp-go` 的 `server.ServeHTTP()` 启动 HTTP 服务
+- **STDIO 模式**：使用 `server.Run(ctx, &mcp.StdioTransport{})` 通过标准输入输出通信
+- **HTTP 模式**：用 `mcp.NewStreamableHTTPHandler` 取得 `http.Handler`，再交给 `http.ListenAndServe`（或 `ListenAndServeTLS`）启动服务
 
 ### 第三阶段：测试与完善
 
