@@ -1,6 +1,6 @@
 ---
 name: ghfs
-description: Use when starting a GHFS (Go HTTP File Server) instance, or when listing, uploading, downloading, creating, deleting, or archiving files on a local or remote GHFS server over HTTP.
+description: Use when installing or starting a GHFS (Go HTTP File Server) instance, or when listing, uploading, downloading, creating, deleting, or archiving files on a local or remote GHFS server over HTTP.
 ---
 
 # GHFS
@@ -20,7 +20,75 @@ Two rules cover most mistakes:
   urlencoded; `upload` is multipart. Getting this wrong reports success and does
   nothing.
 
-## Part 1 — Starting a server locally
+## Part 1 — Installing GHFS
+
+Check whether it is already there before installing anything:
+
+```bash
+command -v ghfs && ghfs --version
+```
+
+Three ways to install it, in order of preference.
+
+### 1. go install
+
+```bash
+go install mjpclab.dev/ghfs@latest
+```
+
+The module path is `mjpclab.dev/ghfs`, not the GitHub URL. The binary lands in
+`$(go env GOPATH)/bin`, which has to be on your `PATH`. Set `GOBIN` to put it
+somewhere else, such as a directory you can write to without root:
+
+```bash
+GOBIN=/somewhere/bin go install mjpclab.dev/ghfs@latest
+```
+
+### 2. Build from source
+
+```bash
+git clone --depth 1 https://github.com/mjpclab/go-http-file-server.git
+cd go-http-file-server
+go build .
+```
+
+Both of these report `Version: dev`, because the real version is stamped in at
+release time rather than compiled from the source tree. Run
+`bash build/build-current.sh` instead if you want a versioned build; it writes a
+release-style archive into `output/`.
+
+### 3. Prebuilt binary
+
+Last resort. Releases are at
+<https://github.com/mjpclab/go-http-file-server/releases>, with assets named
+`ghfs-<version>-<os>-<arch>.tar.gz`, or `.zip` for Windows. Builds cover macOS,
+Linux, FreeBSD, and Windows across amd64, arm64, and several other
+architectures.
+
+**On macOS, prefer one of the first two methods.** The release binaries are
+neither signed nor notarized, so Gatekeeper refuses to run them.
+
+If a prebuilt binary is the only option on macOS, download it with `curl` rather
+than through a browser. Browsers tag downloads with a quarantine attribute and
+`curl` does not, so this avoids the problem instead of having to undo it.
+
+A binary that is already quarantined makes macOS report that it cannot be opened
+because the developer cannot be verified. **Fetching the same release asset
+again with `curl` is the fix**, and it needs no special permission, because the
+fresh copy is never tagged in the first place. Replace the blocked file with it.
+
+Only when re-downloading is impossible does the attribute have to be cleared,
+and **you do not clear it yourself**. Show the person this command and let them
+run it:
+
+```bash
+xattr -d com.apple.quarantine /path/to/ghfs
+```
+
+Clearing quarantine is a decision to trust unsigned code off the internet. That
+belongs to whoever owns the machine, not to the agent working on it.
+
+## Part 2 — Starting a server locally
 
 **GHFS is read-only by default.** Writing, deleting, and archiving each have to
 be enabled explicitly when the process starts. An agent that starts a server
@@ -77,7 +145,7 @@ To use a server someone else started, find it with
 `ps -eo pid,args | grep ghfs`. A system instance is often driven by a config
 file such as `/etc/ghfs.conf`, one flag per line.
 
-## Part 2 — Talking to a server over HTTP
+## Part 3 — Talking to a server over HTTP
 
 Everything below works the same against a local or a remote instance. Only the
 base URL changes.
