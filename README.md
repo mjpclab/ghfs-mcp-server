@@ -1,8 +1,30 @@
-# GHFS MCP Server
+# GHFS Skill & MCP Server
 
-A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for interacting with [GHFS (Go HTTP File Server)](https://github.com/mjpclab/go-http-file-server). Enables AI assistants to list directories, upload files, create directories, and delete files on a GHFS instance.
+Two ways to let an AI assistant drive [GHFS (Go HTTP File Server)](https://github.com/mjpclab/go-http-file-server):
 
-## Features
+- **[Agent skill](#agent-skill)** — teaches an agent to install, start, and talk to GHFS over plain HTTP with the tools it already has. No extra process to run.
+- **[MCP server](#mcp-server)** — an [MCP](https://modelcontextprotocol.io/) server exposing list, upload, mkdir, delete, and archive as tools, for clients that prefer a typed tool surface.
+
+## Agent Skill
+
+`skills/ghfs/` documents GHFS itself: how to install it, how to start a local
+instance with the right permissions, and how to drive the HTTP API for listing,
+uploading, creating directories, deleting, and archiving — including the
+failure modes that silently report success.
+
+Copy the directory into a skills path your runtime loads:
+
+```bash
+cp -r skills/ghfs ~/.claude/skills/
+```
+
+Or point an agent straight at `skills/ghfs/SKILL.md`.
+
+## MCP Server
+
+The Go sources live in `mcp/`.
+
+### Features
 
 - **List directories** — browse GHFS directories with sorting support
 - **Upload files/directories** — upload single files, multiple files, or entire directory structures
@@ -11,13 +33,13 @@ A [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for in
 - **Archive/download** — generate archive download URLs (tar/tgz/zip)
 - **Dual transport** — supports both STDIO and HTTP (Streamable HTTP) modes
 
-## Build
+### Build
 
 ```bash
-go build -o ghfs-mcp-server .
+cd mcp && go build -o ghfs-mcp-server .
 ```
 
-## Usage
+### Usage
 
 ```
 ghfs-mcp-server [options]
@@ -31,13 +53,13 @@ Options:
   -debug             Enable debug logging of MCP messages
 ```
 
-### STDIO Mode (default)
+#### STDIO Mode (default)
 
 ```bash
 ./ghfs-mcp-server -ghfs-url http://localhost:8080
 ```
 
-### HTTP Mode
+#### HTTP Mode
 
 ```bash
 ./ghfs-mcp-server -mode http -addr :9090 -ghfs-url http://localhost:8080
@@ -45,7 +67,7 @@ Options:
 
 The HTTP endpoint is available at `http://localhost:9090/`.
 
-### HTTPS Mode
+#### HTTPS Mode
 
 ```bash
 ./ghfs-mcp-server -mode http -addr :9443 -cert server.crt -key server.key -ghfs-url http://localhost:8080
@@ -53,9 +75,9 @@ The HTTP endpoint is available at `http://localhost:9090/`.
 
 The HTTPS endpoint is available at `https://localhost:9443/`.
 
-## MCP Tools
+### MCP Tools
 
-### `ghfs_list`
+#### `ghfs_list`
 
 List directory contents.
 
@@ -64,7 +86,7 @@ List directory contents.
 | `path`    | string | Yes      | Directory path, e.g. `/` or `/docs/` |
 | `sort`    | string | No       | Sort order, e.g. `/T`, `n`, `S`      |
 
-### `ghfs_upload`
+#### `ghfs_upload`
 
 Upload files or directory structures.
 
@@ -77,7 +99,7 @@ Upload files or directory structures.
 
 Files with `/` in `filepath` are uploaded using GHFS `dirfile` mode, which auto-creates intermediate directories.
 
-### `ghfs_mkdir`
+#### `ghfs_mkdir`
 
 Create directories.
 
@@ -86,7 +108,7 @@ Create directories.
 | `path`    | string   | Yes      | Parent directory path                        |
 | `names`   | string[] | Yes      | Directory names (supports nested like `a/b`) |
 
-### `ghfs_delete`
+#### `ghfs_delete`
 
 Delete files or directories (recursive).
 
@@ -95,7 +117,7 @@ Delete files or directories (recursive).
 | `path`    | string   | Yes      | Parent directory path    |
 | `names`   | string[] | Yes      | Names of items to delete |
 
-### `ghfs_archive`
+#### `ghfs_archive`
 
 Generate an archive download URL for files on the GHFS server.
 
@@ -106,19 +128,9 @@ Generate an archive download URL for files on the GHFS server.
 | `names`    | string[] | No       | Specific items to include (omit for entire dir) |
 | `filename` | string   | No       | Custom filename for the archive download        |
 
-## Agent Skill
+### Client Configuration
 
-`skills/ghfs/` documents GHFS itself for agents that talk to it directly rather
-than through this MCP server: how to start a local instance with the right
-permissions, and how to drive the HTTP API for listing, uploading, creating
-directories, deleting, and archiving.
-
-Point an agent at `skills/ghfs/SKILL.md`, or copy the directory into a skills
-path your runtime loads, such as `~/.claude/skills/`.
-
-## Client Configuration
-
-### Claude Desktop
+#### Claude Desktop
 
 STDIO mode — add to `claude_desktop_config.json`:
 
@@ -133,11 +145,11 @@ STDIO mode — add to `claude_desktop_config.json`:
 }
 ```
 
-### VS Code (Copilot)
+#### VS Code (Copilot)
 
 config file is `.vscode/mcp.json` (project scope) or `~/.config/Code/User/mcp.json` (user scope).
 
-#### STDIO mode
+STDIO mode:
 
 ```json
 {
@@ -150,7 +162,7 @@ config file is `.vscode/mcp.json` (project scope) or `~/.config/Code/User/mcp.js
 }
 ```
 
-#### HTTP mode
+HTTP mode:
 
 ```json
 {
