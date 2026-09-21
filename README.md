@@ -12,13 +12,15 @@ instance with the right permissions, and how to drive the HTTP API for listing,
 uploading, creating directories, deleting, and archiving — including the
 failure modes that silently report success.
 
-Copy the directory into a skills path your runtime loads:
+Link the directory into a skills path your runtime loads, so it tracks the
+repository instead of going stale:
 
 ```bash
-cp -r skills/ghfs ~/.claude/skills/
+ln -s "$PWD/skills/ghfs" ~/.claude/skills/ghfs
 ```
 
-Or point an agent straight at `skills/ghfs/SKILL.md`.
+The link target has to be absolute. Copy the directory instead if you would
+rather pin a version, or point an agent straight at `skills/ghfs/SKILL.md`.
 
 ## MCP Server
 
