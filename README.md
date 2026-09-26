@@ -35,7 +35,15 @@ The Go sources live in `mcp/`.
 - **Archive/download** — generate archive download URLs (tar/tgz/zip)
 - **Dual transport** — supports both STDIO and HTTP (Streamable HTTP) modes
 
-### Build
+### Install
+
+```bash
+cd mcp && go install .
+```
+
+This puts `ghfs-mcp-server` in `$(go env GOPATH)/bin`, or `$GOBIN` if set.
+
+Alternatively, build a binary in place:
 
 ```bash
 cd mcp && go build -o ghfs-mcp-server .
@@ -58,13 +66,13 @@ Options:
 #### STDIO Mode (default)
 
 ```bash
-./ghfs-mcp-server -ghfs-url http://localhost:8080
+ghfs-mcp-server -ghfs-url http://localhost:8080
 ```
 
 #### HTTP Mode
 
 ```bash
-./ghfs-mcp-server -mode http -addr :9090 -ghfs-url http://localhost:8080
+ghfs-mcp-server -mode http -addr :9090 -ghfs-url http://localhost:8080
 ```
 
 The HTTP endpoint is available at `http://localhost:9090/`.
@@ -72,7 +80,7 @@ The HTTP endpoint is available at `http://localhost:9090/`.
 #### HTTPS Mode
 
 ```bash
-./ghfs-mcp-server -mode http -addr :9443 -cert server.crt -key server.key -ghfs-url http://localhost:8080
+ghfs-mcp-server -mode http -addr :9443 -cert server.crt -key server.key -ghfs-url http://localhost:8080
 ```
 
 The HTTPS endpoint is available at `https://localhost:9443/`.
